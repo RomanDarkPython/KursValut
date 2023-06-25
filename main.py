@@ -1,6 +1,11 @@
 import telebot
+import requests
+import json
 
 TOKEN = "6299616316:AAH8mMInznKttfbCZsEyTPmLGpyCIJ6-EQ0"
+headers= {
+  "apikey": "3Jlw0SOoB4pHayS2NY1OnDLmaIgshLY7"
+}
 
 bot = telebot.TeleBot(TOKEN)
 
@@ -10,53 +15,53 @@ keys = {
     'евро' : 'EUR',
 }
 
+class CovertionException(Exception):
+    pass
+
+
 from telebot import TeleBot, types
 
 bot = TeleBot(TOKEN)
 
 
 
-@bot.message_handler(commands=["help"])
+@bot.message_handler(commands=["help", "start"])
 def help_(message: types.Message):
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=3)
-    markup.add("Курсы валют к рублю", "Моя VK страница")
-    bot.send_message(message.chat.id, "Нажмите кнопку с нужной вам функцией", reply_markup=markup)
-    bot.register_next_step_handler(message, get_curency_and_vk_link)
+    text = 'Доступные валюты:'
+    for key in keys.keys():
+        text = '\n'.join((text, key, ))
+    bot.reply_to(message, text)
 
+@bot.message_handler(commands=["values", ])
+def help_(message: types.Message):
+    bot.send_message(message.chat.id, "Доступная Валюта: \nДоллар\nРубль\nЕвро")
 
-def get_curency_and_vk_link(message: types.Message):
-    if message.text == "Курсы валют к рублю":
-        markup = types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=True)
-        markup.add("Показать основные валюты", "Показать все доступные валюты")
-        bot.send_message(message.chat.id, "Введите индекс валюты", reply_markup=markup)
-        bot.register_next_step_handler(message, show_general_currency)
-    if message.text == "Курсы валют к рублю":
-        ...
-    else:
-        bot.register_next_step_handler(message, get_curency_and_vk_link)
+@bot.message_handler(content_types=['text', ])
+def convert(message: telebot.types.Message):
+    values = message.text.split(' ')
+    if len(values) > 3:
+        raise CovertionException('Слишком много параметров')
+    quote, base, amount = values
+    if quote == base:
+        raise CovertionException(f'Невозможно перевести одинаковые валюты {base}')
+    try:
+        quote_ticker = keys[quote]
+    except KeyError:
+        raise CovertionException(f'Не удалось обработать валюту {quote}')
+    try:
+        base_ticker = keys[base]
+    except KeyError:
+        raise CovertionException(f'Не удалось обработать валюту {base}')
 
+    try:
+        amount = float(amount)
+    except ValueError:
+        raise CovertionException(f'Не удалось обработать колличество {amount}')
 
-def show_general_currency(message: types.Message):
-    list_curency = ['USD', 'EUR', 'GBP', 'JPY', 'CHF', 'CNY', 'RUB']
-    if message.text in list_curency:
-        ...
-    elif message.text == "Показать основные валюты":
-        bot.send_message(
-            chat_id=message.chat.id,
-            text="Индекс Название\n"
-                 "<u>USD  Доллар США</u>\n"
-                 "<u>EUR  Евро</u>\n"
-                 "<u>GBP  Фунт стерлингов Великобритании</u>\n"
-                 "<u>JPY  Японская йена</u>\n"
-                 "<u>CHF  Швейцарский франк</u>\n"
-                 "<u>CNY  Китайский юань</u>\n"
-                 "<u>RUB  Российский рубль",
-            parse_mode="html")
-    elif message.text == "Показать все доступные валюты":
-        ...
-    else:
-        bot.register_next_step_handler(message, show_general_currency)
+    r = requests.get(f'https://api.apilayer.com/exchangerates_data/convert?to={base_ticker}&from={quote_ticker}&amount={amount}', headers=headers)
+    total_base = json.loads(r.content)['result']
+    text = f'Цена {amount} {quote} в {base} - {total_base}'
+    bot.send_message(message.chat.id, text)
 
-
-if __name__ == '__main__':
+bot.polling(skip_pending=True)
     bot.infinity_polling(skip_pending=True)
